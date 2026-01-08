@@ -4,6 +4,17 @@
 
 Defense-in-depth protection for Claude Code. Blocks dangerous commands and protects sensitive files via PreToolUse hooks.
 
+## Key Features
+
+- **Command Pattern Blocking** - Blocks dangerous bash commands (rm -rf, git reset --hard, etc.)
+- **Ask Patterns** - Triggers confirmation dialog for risky-but-valid operations
+- **Path Protection** - Three levels: zeroAccess, readOnly, noDelete
+- **Shell Wrapper Unwrapping** - Detects hidden commands in `bash -c`, `python -c`, etc.
+- **Semantic Git Analysis** - Distinguishes safe (`checkout -b`) from dangerous (`checkout -- .`) git operations
+- **Context-Aware Security** - Relaxes checks in documentation files and commit messages
+- **Audit Logging** - JSONL logs with automatic secret redaction
+- **Cross-Platform** - Works on Unix, Windows (PowerShell/cmd), WSL, and Git Bash
+
 ---
 
 ## How It Works
@@ -216,9 +227,15 @@ This simulates a rogue AI attempting destructive commands - all should be blocke
         │   ├── manual_control_damage_control_ag_workflow.md
         │   └── build_for_windows.md
         ├── hooks/
-        │   ├── damage-control-python/     # Python/UV implementation
-        │   │   ├── *.py
-        │   │   └── python-settings.json
+        │   ├── damage-control-python/     # Python/UV implementation (recommended)
+        │   │   ├── bash-tool-damage-control.py
+        │   │   ├── edit-tool-damage-control.py
+        │   │   ├── write-tool-damage-control.py
+        │   │   ├── test-damage-control.py
+        │   │   ├── log_rotate.py          # Log rotation utility
+        │   │   ├── benchmark.py           # Performance benchmarking
+        │   │   ├── python-settings.json
+        │   │   └── tests/                 # Test suite (174 tests)
         │   └── damage-control-typescript/ # Bun/TS implementation
         │       ├── *.ts
         │       └── typescript-settings.json
@@ -390,6 +407,63 @@ DELETE FROM users;
 # Triggers confirmation dialog (has WHERE with ID)
 DELETE FROM users WHERE id = 1;
 ```
+
+---
+
+## Advanced Features
+
+### Shell Wrapper Unwrapping
+
+Detects and analyzes commands hidden inside shell wrappers (up to 5 levels deep):
+
+```bash
+# All of these are detected and blocked:
+bash -c "rm -rf /"
+python -c "import os; os.system('rm -rf /')"
+sh -c 'bash -c "rm -rf /"'
+```
+
+### Semantic Git Analysis
+
+Intelligently distinguishes safe from dangerous git operations:
+
+| Safe Operations | Dangerous Operations |
+|-----------------|---------------------|
+| `git checkout -b feature` | `git checkout -- .` |
+| `git push --force-with-lease` | `git push --force` |
+| `git reset --soft HEAD~1` | `git reset --hard` |
+| `git status` | `git clean -fd` |
+
+### Context-Aware Security
+
+The `contexts` section in patterns.yaml relaxes checks in appropriate situations:
+
+```yaml
+contexts:
+  documentation:
+    enabled: true
+    detection:
+      file_extensions: [".md", ".rst", ".txt"]
+    relaxed_checks:
+      - bashToolPatterns  # Allow mentioning dangerous commands in docs
+    enforced_checks:
+      - zeroAccessPaths   # Still protect secrets
+```
+
+This allows writing documentation that mentions `rm -rf` without triggering blocks.
+
+### Audit Logging
+
+All decisions are logged to `~/.claude/logs/damage-control/YYYY-MM-DD.log`:
+
+```json
+{"timestamp": "2024-01-07T12:00:00", "tool": "Bash", "command": "rm -rf /tmp", "decision": "blocked", "reason": "rm with recursive flags"}
+```
+
+Features:
+- Automatic secret redaction (API keys, passwords, tokens)
+- Fire-and-forget log rotation (30 days archive, 90 days delete)
+- JSONL format for easy parsing
 
 ---
 

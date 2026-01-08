@@ -18,6 +18,14 @@ This skill helps users deploy and manage the Damage Control security system, whi
   - `readOnlyPaths` - Read allowed, modifications blocked
   - `noDeletePaths` - All operations except delete
 
+### Advanced Features
+
+- **Shell Wrapper Unwrapping**: Detects hidden commands in `bash -c`, `python -c`, `sh -c`, etc. (up to 5 levels deep)
+- **Semantic Git Analysis**: Distinguishes safe git operations (`checkout -b`, `push --force-with-lease`) from dangerous ones (`checkout -- .`, `push --force`, `reset --hard`)
+- **Context-Aware Security**: Relaxes pattern checks in documentation files and commit messages while still enforcing path protections
+- **Audit Logging**: JSONL logs with automatic secret redaction (API keys, passwords, tokens)
+- **Log Rotation**: Automatic archive (30 days) and cleanup (90 days) with cross-platform file locking
+
 ## Skill Structure
 
 ```
@@ -32,12 +40,15 @@ This skill helps users deploy and manage the Damage Control security system, whi
 │   ├── test_damage_control.md
 │   └── build_for_windows.md
 ├── hooks/
-│   ├── damage-control-python/   # Python/UV implementation
+│   ├── damage-control-python/   # Python/UV implementation (recommended)
 │   │   ├── bash-tool-damage-control.py
 │   │   ├── edit-tool-damage-control.py
 │   │   ├── write-tool-damage-control.py
 │   │   ├── python-settings.json
-│   │   └── test-damage-control.py
+│   │   ├── test-damage-control.py
+│   │   ├── log_rotate.py        # Log rotation utility
+│   │   ├── benchmark.py         # Performance benchmarking
+│   │   └── tests/               # Comprehensive test suite (174 tests)
 │   └── damage-control-typescript/  # Bun/TypeScript implementation
 │       ├── bash-tool-damage-control.ts
 │       ├── edit-tool-damage-control.ts
@@ -194,6 +205,37 @@ This section defines the decision tree for handling user requests. Based on what
 | 0    | Allow operation                      |
 | 0    | Ask (JSON output triggers dialog)    |
 | 2    | Block operation                      |
+
+### Context-Aware Security
+
+The `contexts` section in patterns.yaml allows relaxing checks in specific situations:
+
+| Context          | Trigger                        | Relaxed Checks     | Still Enforced              |
+| ---------------- | ------------------------------ | ------------------ | --------------------------- |
+| `documentation`  | .md, .rst, .txt file edits     | bashToolPatterns   | All path protections        |
+| `commit_message` | git commit -m, heredoc commits | bashToolPatterns   | Path protections + semantic |
+
+This allows writing documentation that mentions dangerous commands without triggering blocks.
+
+### Audit Logging
+
+Logs are written to `~/.claude/logs/damage-control/YYYY-MM-DD.log` in JSONL format:
+
+```json
+{"timestamp": "...", "tool": "Bash", "command": "...", "decision": "blocked", "reason": "...", "pattern": "..."}
+```
+
+Features:
+- Automatic secret redaction (API keys, passwords, AWS keys, tokens)
+- Command truncation (max 500 chars)
+- Fire-and-forget log rotation (non-blocking)
+
+### Log Rotation
+
+Controlled via environment variables:
+- `DAMAGE_CONTROL_LOG_ROTATION=disabled` - Turn off rotation
+- `DAMAGE_CONTROL_LOG_ARCHIVE_DAYS=30` - Days before archiving
+- `DAMAGE_CONTROL_LOG_DELETE_DAYS=90` - Days before deletion (0=never)
 
 ---
 
