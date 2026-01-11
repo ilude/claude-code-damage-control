@@ -718,9 +718,9 @@ function checkCommand(command: string, config: CompiledConfig, context: string |
     const [isDangerousGit, gitReason] = analyzeGitCommand(unwrappedCmd);
     if (isDangerousGit) {
       return {
-        blocked: true,
-        ask: false,
-        reason: `Blocked: ${gitReason}`,
+        blocked: false,
+        ask: true,
+        reason: gitReason,
         patternMatched: "semantic_git",
         wasUnwrapped,
         semanticMatch: true,
@@ -786,9 +786,12 @@ function checkCommand(command: string, config: CompiledConfig, context: string |
         const escapedExpanded = pathObj.escapedExpanded || "";
         const escapedOriginal = pathObj.escapedOriginal || "";
 
+        // Match path only if NOT followed by more filename chars
+        // This prevents .env from matching .env.example
+        const suffix = "(?![a-zA-Z0-9_.-])";
         if (
-          (escapedExpanded && new RegExp(escapedExpanded).test(unwrappedCmd)) ||
-          (escapedOriginal && new RegExp(escapedOriginal).test(unwrappedCmd))
+          (escapedExpanded && new RegExp(escapedExpanded + suffix).test(unwrappedCmd)) ||
+          (escapedOriginal && new RegExp(escapedOriginal + suffix).test(unwrappedCmd))
         ) {
           return {
             blocked: true,

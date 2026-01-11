@@ -864,7 +864,7 @@ def check_command(command: str, config: Dict[str, Any], context: Optional[str] =
     if "semantic_git" not in relaxed_checks:
         is_dangerous_git, git_reason = analyze_git_command(unwrapped_cmd)
         if is_dangerous_git:
-            return True, False, f"Blocked: {git_reason}", "semantic_git", was_unwrapped, True
+            return False, True, git_reason, "semantic_git", was_unwrapped, True
 
     # Check if config is compiled (has _compiled keys) or raw
     # For backward compatibility with tests that pass raw configs
@@ -931,9 +931,11 @@ def check_command(command: str, config: Dict[str, Any], context: Optional[str] =
                 escaped_original = path_obj.get("escaped_original", "")
 
                 if escaped_expanded or escaped_original:
-                    # Check both expanded path (/Users/x/.ssh/) and original tilde form (~/.ssh/)
-                    if (escaped_expanded and re.search(escaped_expanded, unwrapped_cmd)) or \
-                       (escaped_original and re.search(escaped_original, unwrapped_cmd)):
+                    # Match path only if NOT followed by more filename chars
+                    # This prevents .env from matching .env.example
+                    suffix = r'(?![a-zA-Z0-9_.-])'
+                    if (escaped_expanded and re.search(escaped_expanded + suffix, unwrapped_cmd)) or \
+                       (escaped_original and re.search(escaped_original + suffix, unwrapped_cmd)):
                         return True, False, f"Blocked: zero-access path {path_obj['original']} (no operations allowed)", "zero_access_literal", was_unwrapped, False
 
     # 3. Check for modifications to read-only paths (reads allowed)

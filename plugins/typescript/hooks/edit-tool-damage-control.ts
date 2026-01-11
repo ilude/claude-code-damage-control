@@ -18,7 +18,7 @@
  */
 
 import { existsSync, readFileSync, mkdirSync, appendFileSync } from "fs";
-import { dirname, join, basename, normalize } from "path";
+import { dirname, join, basename, normalize, sep } from "path";
 import { homedir } from "os";
 import { parse as parseYaml } from "yaml";
 import { spawn } from "child_process";
@@ -147,7 +147,19 @@ function matchPath(filePath: string, pattern: string): boolean {
     }
     return false;
   } else {
-    if (normalized.startsWith(expandedPattern) || normalized === expandedPattern.replace(/\/$/, "")) {
+    // Exact match or directory prefix matching
+    // .env should NOT match .env.example (different files)
+    // ~/.ssh/ SHOULD match ~/.ssh/id_rsa (directory contains file)
+    const patternNoSlash = expandedPattern.replace(/\/$/, "");
+    if (normalized === expandedPattern || normalized === patternNoSlash) {
+      return true;
+    }
+    // Only prefix match if pattern is a directory (ends with /)
+    if (expandedPattern.endsWith("/") && normalized.startsWith(expandedPattern)) {
+      return true;
+    }
+    // Also match if path is inside the directory (pattern without trailing /)
+    if (normalized.startsWith(patternNoSlash + "/") || normalized.startsWith(patternNoSlash + sep)) {
       return true;
     }
     return false;
