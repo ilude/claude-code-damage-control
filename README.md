@@ -17,6 +17,9 @@ Defense-in-depth protection for Claude Code. Blocks dangerous commands and prote
 
 # OR install TypeScript version (uses Bun)
 /plugin install damage-control-typescript
+
+# Optional: Install path-normalization plugin
+/plugin install path-normalization
 ```
 
 ### Direct GitHub Install
@@ -27,6 +30,9 @@ Defense-in-depth protection for Claude Code. Blocks dangerous commands and prote
 
 # TypeScript version
 /plugin install github:ilude/claude-code-damage-control/plugins/typescript
+
+# Path normalization
+/plugin install github:ilude/claude-code-damage-control/plugins/python/path-normalization
 ```
 
 ### Manual Installation (Development)
@@ -40,6 +46,9 @@ cd claude-code-damage-control
 
 # OR TypeScript version
 /plugin install ./plugins/typescript
+
+# Path normalization
+/plugin install ./plugins/python/path-normalization
 ```
 
 ### Requirements
@@ -62,6 +71,60 @@ cd claude-code-damage-control
 - **Context-Aware Security** - Relaxes checks in documentation files and commit messages
 - **Audit Logging** - JSONL logs with automatic secret redaction
 - **Cross-Platform** - Works on Unix, Windows (PowerShell/cmd), WSL, and Git Bash
+
+---
+
+## Path Normalization Plugin
+
+A separate plugin that enforces consistent path usage across platforms.
+
+### What It Does
+
+- **Blocks absolute paths** in Edit/Write operations (e.g., `C:/Users/...`, `/home/user/...`)
+- **Enforces forward slashes** - blocks backslash paths like `src\components\file.ts`
+- **Guides to relative paths** - suggests the correct relative path when blocking
+
+### Why Use It
+
+| Problem | Solution |
+|---------|----------|
+| Absolute paths break on other machines | Enforces relative paths from project root |
+| Backslashes cause cross-platform issues | Requires forward slashes consistently |
+| Subagents may use inconsistent paths | Normalizes all Edit/Write operations |
+
+### Path Detection
+
+The plugin detects and blocks:
+
+```
+C:/Users/mike/project/file.py     → Windows absolute
+/c/Users/mike/project/file.py     → MSYS/Git Bash absolute
+/home/user/project/file.py        → Unix absolute
+/mnt/c/Users/mike/project/file.py → WSL mount path
+\\server\share\file.py            → UNC network path
+src\components\Button.tsx         → Backslash path
+```
+
+And suggests the relative equivalent:
+
+```
+Use relative path: 'src/components/Button.tsx'
+```
+
+### Exceptions
+
+The plugin allows:
+- Paths within the current project directory (even if absolute)
+- Claude Code internal paths (`~/.claude/...`)
+- Paths within the user's home directory (for subagent compatibility)
+- System paths like `/tmp/`, `/dev/`
+
+### Testing
+
+```bash
+cd plugins/python/path-normalization/hooks
+python test-path-normalization.py --test-suite all
+```
 
 ---
 
@@ -179,7 +242,15 @@ After installation, these commands are available:
 │   │   │   ├── log_rotate.py
 │   │   │   └── tests/
 │   │   ├── skills/
-│   │   └── commands/
+│   │   ├── commands/
+│   │   │
+│   │   └── path-normalization/    # path-normalization plugin
+│   │       ├── .claude-plugin/
+│   │       │   └── plugin.json
+│   │       └── hooks/
+│   │           ├── hooks.json
+│   │           ├── path-normalization-hook.py
+│   │           └── test-path-normalization.py
 │   │
 │   └── typescript/                # damage-control-typescript plugin
 │       ├── .claude-plugin/
@@ -326,6 +397,20 @@ Features:
 - Automatic secret redaction (API keys, passwords, tokens)
 - Fire-and-forget log rotation (30 days archive, 90 days delete)
 - JSONL format for easy parsing
+
+### Hook Disable (Development Only)
+
+For hook development, you can temporarily disable hooks via environment variable:
+
+```bash
+CLAUDE_DISABLE_HOOKS=damage-control claude
+# or
+CLAUDE_DISABLE_HOOKS=path-normalization claude
+# or both
+CLAUDE_DISABLE_HOOKS=damage-control,path-normalization claude
+```
+
+> **Warning:** Only use this when modifying the hooks themselves. Never use it to bypass security checks during normal work.
 
 ---
 
