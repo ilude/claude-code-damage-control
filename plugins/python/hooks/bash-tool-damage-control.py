@@ -13,6 +13,24 @@ Exit codes:
   0 = Allow command (or JSON output with permissionDecision)
   2 = Block command (stderr fed back to Claude)
 
+Environment variables:
+  CLAUDE_DISABLE_HOOKS - Comma-separated list of hook names to disable
+                         Use "damage-control" to disable this hook
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ WARNING FOR AI ASSISTANTS (Claude, Copilot, etc.):                  │
+  │                                                                     │
+  │ CLAUDE_DISABLE_HOOKS is for HOOK DEVELOPMENT ONLY.                  │
+  │                                                                     │
+  │ You may ONLY use this variable when ALL conditions are met:         │
+  │   1. You are directly modifying THIS hook's code                    │
+  │   2. Working directory is ~/.dotfiles OR ~/.claude                  │
+  │   3. The hook is blocking edits to itself (circular dependency)     │
+  │                                                                     │
+  │ NEVER use this to bypass security checks during normal work.        │
+  │ If a hook blocks an operation, FIX THE ISSUE instead of disabling.  │
+  └─────────────────────────────────────────────────────────────────────┘
+
 JSON output for ask patterns:
   {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": "..."}}
 """
@@ -28,6 +46,14 @@ from typing import Tuple, List, Dict, Any, Optional
 from datetime import datetime
 
 import yaml
+
+HOOK_NAME = "damage-control"
+
+
+def is_hook_disabled() -> bool:
+    """Check if this hook is disabled via CLAUDE_DISABLE_HOOKS env var."""
+    disabled_hooks = os.environ.get("CLAUDE_DISABLE_HOOKS", "")
+    return HOOK_NAME in [h.strip() for h in disabled_hooks.split(",")]
 
 
 # ============================================================================
@@ -931,11 +957,23 @@ def check_command(command: str, config: Dict[str, Any], context: Optional[str] =
                 escaped_original = path_obj.get("escaped_original", "")
 
                 if escaped_expanded or escaped_original:
-                    # Match path only if NOT followed by more filename chars
-                    # This prevents .env from matching .env.example
-                    suffix = r'(?![a-zA-Z0-9_.-])'
-                    if (escaped_expanded and re.search(escaped_expanded + suffix, unwrapped_cmd)) or \
-                       (escaped_original and re.search(escaped_original + suffix, unwrapped_cmd)):
+                    original_path = path_obj.get("original", "")
+                    is_directory = original_path.endswith("/")
+
+                    if is_directory:
+                        # Directory path - match any file inside
+                        # No suffix needed since the / already delimits
+                        pattern_expanded = escaped_expanded if escaped_expanded else None
+                        pattern_original = escaped_original if escaped_original else None
+                    else:
+                        # File path - use suffix to prevent partial matches
+                        # This prevents .env from matching .env.example
+                        suffix = r'(?![a-zA-Z0-9_.-])'
+                        pattern_expanded = (escaped_expanded + suffix) if escaped_expanded else None
+                        pattern_original = (escaped_original + suffix) if escaped_original else None
+
+                    if (pattern_expanded and re.search(pattern_expanded, unwrapped_cmd)) or \
+                       (pattern_original and re.search(pattern_original, unwrapped_cmd)):
                         return True, False, f"Blocked: zero-access path {path_obj['original']} (no operations allowed)", "zero_access_literal", was_unwrapped, False
 
     # 3. Check for modifications to read-only paths (reads allowed)
@@ -962,6 +1000,10 @@ def check_command(command: str, config: Dict[str, Any], context: Optional[str] =
 # ============================================================================
 
 def main() -> None:
+    # Check if hook is disabled
+    if is_hook_disabled():
+        sys.exit(0)
+
     # Get compiled configuration (uses module-level cache)
     config = get_compiled_config()
 

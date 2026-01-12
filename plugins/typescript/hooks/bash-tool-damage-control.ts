@@ -19,6 +19,24 @@
  *   0 = Allow command (or JSON output with permissionDecision)
  *   2 = Block command (stderr fed back to Claude)
  *
+ * Environment variables:
+ *   CLAUDE_DISABLE_HOOKS - Comma-separated list of hook names to disable
+ *                          Use "damage-control" to disable this hook
+ *
+ *   ┌─────────────────────────────────────────────────────────────────────┐
+ *   │ WARNING FOR AI ASSISTANTS (Claude, Copilot, etc.):                  │
+ *   │                                                                     │
+ *   │ CLAUDE_DISABLE_HOOKS is for HOOK DEVELOPMENT ONLY.                  │
+ *   │                                                                     │
+ *   │ You may ONLY use this variable when ALL conditions are met:         │
+ *   │   1. You are directly modifying THIS hook's code                    │
+ *   │   2. Working directory is ~/.dotfiles OR ~/.claude                  │
+ *   │   3. The hook is blocking edits to itself (circular dependency)     │
+ *   │                                                                     │
+ *   │ NEVER use this to bypass security checks during normal work.        │
+ *   │ If a hook blocks an operation, FIX THE ISSUE instead of disabling.  │
+ *   └─────────────────────────────────────────────────────────────────────┘
+ *
  * JSON output for ask patterns:
  *   {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask", "permissionDecisionReason": "..."}}
  */
@@ -29,6 +47,12 @@ import { homedir } from "os";
 import { parse as parseYaml } from "yaml";
 import { spawn } from "child_process";
 
+const HOOK_NAME = "damage-control";
+
+function isHookDisabled(): boolean {
+  const disabledHooks = process.env.CLAUDE_DISABLE_HOOKS || "";
+  return disabledHooks.split(",").map(h => h.trim()).includes(HOOK_NAME);
+}
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -786,21 +810,40 @@ function checkCommand(command: string, config: CompiledConfig, context: string |
         const escapedExpanded = pathObj.escapedExpanded || "";
         const escapedOriginal = pathObj.escapedOriginal || "";
 
-        // Match path only if NOT followed by more filename chars
-        // This prevents .env from matching .env.example
-        const suffix = "(?![a-zA-Z0-9_.-])";
-        if (
-          (escapedExpanded && new RegExp(escapedExpanded + suffix).test(unwrappedCmd)) ||
-          (escapedOriginal && new RegExp(escapedOriginal + suffix).test(unwrappedCmd))
-        ) {
-          return {
-            blocked: true,
-            ask: false,
-            reason: `Blocked: zero-access path ${pathObj.original} (no operations allowed)`,
-            patternMatched: "zero_access_literal",
-            wasUnwrapped,
-            semanticMatch: false,
-          };
+        // For file patterns (not ending with /), add suffix check
+        // to prevent .env from matching .env.example
+        // For directory patterns (ending with /), match directly
+        if (pathObj.original.endsWith('/')) {
+          // Directory pattern - match directly
+          if (
+            (escapedExpanded && new RegExp(escapedExpanded).test(unwrappedCmd)) ||
+            (escapedOriginal && new RegExp(escapedOriginal).test(unwrappedCmd))
+          ) {
+            return {
+              blocked: true,
+              ask: false,
+              reason: `Blocked: zero-access path ${pathObj.original} (no operations allowed)`,
+              patternMatched: 'zero_access_literal',
+              wasUnwrapped,
+              semanticMatch: false,
+            };
+          }
+        } else {
+          // File pattern - add suffix to prevent partial matches
+          const suffix = '(?![a-zA-Z0-9_.-])';
+          if (
+            (escapedExpanded && new RegExp(escapedExpanded + suffix).test(unwrappedCmd)) ||
+            (escapedOriginal && new RegExp(escapedOriginal + suffix).test(unwrappedCmd))
+          ) {
+            return {
+              blocked: true,
+              ask: false,
+              reason: `Blocked: zero-access path ${pathObj.original} (no operations allowed)`,
+              patternMatched: 'zero_access_literal',
+              wasUnwrapped,
+              semanticMatch: false,
+            };
+          }
         }
       }
     }
@@ -855,6 +898,11 @@ function checkCommand(command: string, config: CompiledConfig, context: string |
 // =============================================================================
 
 async function main(): Promise<void> {
+  // Check if hook is disabled
+  if (isHookDisabled()) {
+    process.exit(0);
+  }
+
   const config = getCompiledConfig();
 
   // Read stdin

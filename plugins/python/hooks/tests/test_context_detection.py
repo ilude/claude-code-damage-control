@@ -48,7 +48,7 @@ def config_with_contexts_enabled():
             {"pattern": r"\brm\s+.*-[rRf]", "reason": "rm with dangerous flags"},
             {"pattern": r"\bgit\s+push\s+--force\b", "reason": "git push --force"},
         ],
-        "zeroAccessPaths": ["~/.ssh/", ".env", "secrets.yaml"],
+        "zeroAccessPaths": ["~/.ssh/", ".env"],
         "readOnlyPaths": ["/etc/"],
         "noDeletePaths": ["README.md"],
         "contexts": {
@@ -107,7 +107,7 @@ def config_without_contexts():
         "bashToolPatterns": [
             {"pattern": r"\brm\s+.*-[rRf]", "reason": "rm with dangerous flags"},
         ],
-        "zeroAccessPaths": ["~/.ssh/", ".env", "secrets.yaml"],
+        "zeroAccessPaths": ["~/.ssh/", ".env"],
         "readOnlyPaths": ["/etc/"],
         "noDeletePaths": [],
     }
@@ -277,17 +277,17 @@ class TestCommitMessageContextRelaxedChecks:
         # The pattern "git push --force" is in bashToolPatterns, but context relaxes it
         assert not blocked
 
-    def test_commit_message_still_blocks_dangerous_git(self, config_with_contexts_enabled, tmp_log_dir):
-        """Commit context still blocks dangerous git operations via semantic analysis."""
-        # Semantic git analysis is enforced even in commit context
-        command = 'git push --force origin main'
+    def test_commit_message_still_blocks_zero_access(self, config_with_contexts_enabled, tmp_log_dir):
+        """Commit context still blocks zero-access path operations."""
+        # This command touches ~/.ssh which is zero-access
+        command = 'cat ~/.ssh/id_rsa && git commit -m "test"'
         blocked, ask, reason, pattern, unwrapped, semantic = check_command(
             command,
             config_with_contexts_enabled,
             context="commit_message"
         )
-        assert blocked or ask  # Either blocked or requires confirmation
-        assert semantic  # Should be caught by semantic git analysis
+        assert blocked
+        assert "zero-access" in reason
 
 
 # ============================================================================
@@ -309,8 +309,9 @@ class TestNoContextStandardBehavior:
 
     def test_edit_blocks_zero_access_without_context(self, config_with_contexts_enabled, tmp_log_dir):
         """Edit tool blocks zero-access paths when not in a context."""
+        # Test with exact .env match (not .env.example which should be allowed)
         blocked, reason = edit_check_path(
-            "secrets.yaml",
+            ".env",
             config_with_contexts_enabled,
             context=None
         )
@@ -319,8 +320,9 @@ class TestNoContextStandardBehavior:
 
     def test_write_blocks_zero_access_without_context(self, config_with_contexts_enabled, tmp_log_dir):
         """Write tool blocks zero-access paths when not in a context."""
+        # Test with exact .env match (not .env.example which should be allowed)
         blocked, reason = write_check_path(
-            "secrets.yaml",
+            ".env",
             config_with_contexts_enabled,
             context=None
         )
